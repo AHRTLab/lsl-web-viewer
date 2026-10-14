@@ -1,0 +1,2 @@
+include LICENSE THIRD_PARTY_NOTICES.md README.md
+recursive-include lsl_web_viewer/static *

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+data/
+web/node_modules/
+web/dist-demo/
+web/test-results/
+web/playwright-report/
+.DS_Store

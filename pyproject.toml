@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lsl-web-viewer"
+version = "0.1.0"
+description = "Browser-based live viewer and labeled recorder for Lab Streaming Layer (LSL) streams"
+readme = "README.md"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "AHRT Lab, Rochester Institute of Technology" }]
+requires-python = ">=3.10"
+dependencies = ["websockets>=13", "pylsl>=1.16", "numpy"]
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/AHRTLab/lsl-web-viewer"
+Demo = "https://ahrtlab.github.io/lsl-web-viewer/"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+lsl-web-viewer = "lsl_web_viewer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lsl_web_viewer*"]
+
+[tool.setuptools.package-data]
+lsl_web_viewer = ["static/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
