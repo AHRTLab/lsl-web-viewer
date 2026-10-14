@@ -1,0 +1,27 @@
+{
+  "name": "lsl-web-viewer-page",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "license": "BSD-3-Clause",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5180",
+    "build": "tsc --noEmit && vite build",
+    "build:demo": "tsc --noEmit && vite build --mode demo",
+    "preview:demo": "vite preview --mode demo --host 127.0.0.1 --port 4180 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "npm run build && npm run build:demo && playwright test"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.53.0",
+    "@types/node": "22.15.30",
+    "@types/three": "0.170.0",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
+}

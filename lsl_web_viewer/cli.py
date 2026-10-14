@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import errno
 import logging
+import signal
 import sys
 import webbrowser
 
@@ -46,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
               "  pip install pylsl   (it bundles liblsl on Windows / macOS / Linux x86_64)", file=sys.stderr)
         return 1
 
-    shown = "localhost" if args.host in ("0.0.0.0", "::", "127.0.0.1") else args.host
+    shown = "localhost" if args.host in ("0.0.0.0", "::", "") else args.host
     url = f"http://{shown}:{args.port}/"
     server = ViewerServer(args.host, args.port, data_dir=args.data_dir, markers=not args.no_markers)
 
@@ -56,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.open:
             webbrowser.open(url)
 
+    def on_term(*_: object) -> None:  # `kill` / service stop: shut down like Ctrl+C (an open take is saved)
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, on_term)
     try:
         asyncio.run(server.run_forever(ready))
     except KeyboardInterrupt:
