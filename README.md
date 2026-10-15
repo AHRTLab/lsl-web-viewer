@@ -188,7 +188,8 @@ npm run build                              # rebuild the page into lsl_web_viewe
   `web/dist-demo/` with base `/lsl-web-viewer/`. Same code: the page runs live when the tool's
   `<meta name="lsl-web-viewer" content="served">` is present, and in demo mode otherwise.
 - `scripts/release.sh` rebuilds `static/`, runs the tests and prints the tag commands.
-  `scripts/deploy.sh` publishes the demo site to the `gh-pages` branch.
+  Pushing to `main` publishes the demo site: `.github/workflows/pages.yml` runs the unit tests, builds
+  `npm run build:demo` and deploys it to GitHub Pages (repo setting, once: Settings → Pages → Source: GitHub Actions).
 
 ## License
 
