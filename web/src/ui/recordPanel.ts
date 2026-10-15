@@ -1,5 +1,7 @@
-// Record panel: team + label (with recent-label chips), Record / Stop, timed-take settings
-// (duration, countdown, repeat, rest), the take status, and the list of saved files.
+// Record panel: where takes are saved (with Change…), team + label (with recent-label chips),
+// Record / Stop, timed-take settings (duration, countdown, repeat, rest), the take status, and the list
+// of saved files. The tool writes the files; Change… asks it to open the computer's own folder dialog,
+// and if it has none (e.g. headless Linux) a path box appears instead.
 // Shortcuts (ignored while typing in a field): R = record / stop, Esc = stop.
 
 import type { Link, RecStatus } from '../protocol';
@@ -21,6 +23,11 @@ export class RecordPanel {
   private statusEl: HTMLDivElement;
   private big: HTMLDivElement;
   private files: HTMLOListElement;
+  private folderPath: HTMLSpanElement;
+  private folderBtn: HTMLButtonElement;
+  private folderBox: HTMLDivElement;
+  private folderInput: HTMLInputElement;
+  folder = '';
   private recent: string[];
   status: RecStatus = { type: 'rec_status', state: 'idle' };
   saved: string[] = [];
@@ -63,7 +70,21 @@ export class RecordPanel {
     this.files = el('ol', 'saved-files');
     this.files.id = 'saved-files';
 
-    body.append(labeled('team', this.team), labeled('label', this.label), this.chips, timedToggle, timedBox,
+    this.folderPath = el('span', 'folder-path', '…');
+    this.folderPath.id = 'rec-folder';
+    this.folderBtn = button('Change…', () => this.link.send({ type: 'choose_folder' }), 'small');
+    this.folderBtn.id = 'rec-folder-btn';
+    this.folderBtn.title = 'Pick the folder recordings are saved to (opens your computer\'s folder dialog)';
+    const folderRow = el('div', 'folder-row');
+    folderRow.append(el('span', 'muted small', 'saving to'), this.folderPath, this.folderBtn);
+    this.folderInput = el('input', 'text', undefined, { type: 'text', placeholder: 'full folder path, e.g. ~/Documents/recordings', id: 'rec-folder-input' });
+    const useBtn = button('Use', () => this.link.send({ type: 'set_folder', path: this.folderInput.value.trim() }), 'small');
+    this.folderInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') useBtn.click(); });
+    this.folderBox = el('div', 'folder-box hidden');
+    this.folderBox.append(this.folderInput, useBtn);
+    if (link.mode === 'demo') this.folderBtn.classList.add('hidden');
+
+    body.append(folderRow, this.folderBox, labeled('team', this.team), labeled('label', this.label), this.chips, timedToggle, timedBox,
       this.recBtn, this.big, this.statusEl, el('div', 'side-title', 'saved'), this.files);
     syncTimed();
     this.renderChips();
@@ -157,7 +178,21 @@ export class RecordPanel {
     }
   }
 
-  error(message: string): void {
+  /** The tool's current save folder (hello / folder messages). */
+  setFolder(path: string): void {
+    this.folder = path;
+    const short = path.replace(/^\/(Users|home)\/[^/]+/, '~');
+    this.folderPath.textContent = short.length > 42 ? `…${short.slice(-41)}` : short;
+    this.folderPath.title = path;
+    this.folderBox.classList.add('hidden');
+  }
+
+  error(message: string, noDialog = false): void {
     this.statusEl.textContent = `⚠ ${message}`;
+    if (noDialog) {
+      this.folderInput.value = this.folder;
+      this.folderBox.classList.remove('hidden');
+      this.folderInput.focus();
+    }
   }
 }

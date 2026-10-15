@@ -6,7 +6,7 @@ by arrival time means a 2 s take holds 2 s of samples even though network delive
 grace period after stop lets the last in-flight chunks arrive before the file is written.
 
 Files: <data-dir>/<team>/<label>_<YYYYmmdd_HHMMSS>.csv, or …_<stream>.csv when a take records more
-than one stream. The header matches the BioRadio data-collection GUI (plus `# stream:` / `# lsl_uid:`),
+than one stream. The data dir can be changed while running (the page's "Change…" button, folders.py). The header matches the BioRadio data-collection GUI (plus `# stream:` / `# lsl_uid:`),
 so `lsl_web_viewer.load_recording()` reads both tools' files.
 
 An LSL marker outlet `LslWebViewerMarkers` (type Markers) announces `record_start:<label>` and
@@ -16,6 +16,7 @@ parallel carries the labels too.
 from __future__ import annotations
 
 import csv
+import io
 import logging
 import re
 import socket
@@ -131,47 +132,55 @@ class Recorder:
             self.markers.push(f"record_stop:{take.label}", take.stop)
         return take
 
-    def finish(self) -> list[str]:
-        """Write the take's files (call STOP_GRACE_SEC after `end`). Returns the paths written."""
+    def finish(self) -> Take | None:
+        """Close and return the take (call STOP_GRACE_SEC after `end`); `write_take` saves it."""
         with self._lock:
             take, self.take = self.take, None
-        if take is None:
-            return []
-        return write_take(take, self.data_dir)
+        return take
 
 
-def write_take(take: Take, data_dir: Path) -> list[str]:
-    subdir = data_dir / take.team
-    subdir.mkdir(parents=True, exist_ok=True)
+def format_take(take: Take) -> list[tuple[str, str]]:
+    """The take as CSV files: [(relative path "<team>/<name>.csv", text)], one per recorded stream."""
     ts_str = take.wall.strftime("%Y%m%d_%H%M%S")
     duration = (take.stop or take.start) - take.start
     multi = len(take.tracks) > 1
-    paths: list[str] = []
+    out: list[tuple[str, str]] = []
     for uid, tr in take.tracks.items():
         row = tr.row
         stem = f"{take.label}_{ts_str}" + (f"_{safe_part(row['name'], 'stream')}" if multi else "")
-        path = subdir / f"{stem}.csv"
-        k = 2
-        while path.exists():  # two takes inside the same second (short takes, no rest)
-            path = subdir / f"{stem}_{k}.csv"
-            k += 1
         channels = list(row["channel_labels"])
         numeric = row["fmt"] != "string"
-        with open(path, "w", newline="") as f:
-            writer = csv.writer(f)
-            f.write(f"# team: {take.team}\n")
-            f.write(f"# label: {take.label}\n")
-            f.write(f"# timestamp: {ts_str}\n")
-            f.write(f"# sample_rate: {row['srate']}\n")
-            f.write(f"# samples: {len(tr.t)}\n")
-            f.write(f"# duration_sec: {duration:.3f}\n")
-            f.write(f"# channels: {','.join(channels)}\n")
-            f.write(f"# stream: {row['name']}\n")
-            f.write(f"# lsl_uid: {uid}\n")
-            f.write("#\n")
-            writer.writerow(["timestamp"] + channels)
-            for ts, s in zip(tr.t, tr.x):
-                writer.writerow([float(ts)] + ([float(v) for v in s] if numeric else [str(v) for v in s]))
-        log.info("saved %d samples (%.1f s) of %s to %s", len(tr.t), duration, row["name"], path)
+        f = io.StringIO(newline="")
+        writer = csv.writer(f)
+        f.write(f"# team: {take.team}\n")
+        f.write(f"# label: {take.label}\n")
+        f.write(f"# timestamp: {ts_str}\n")
+        f.write(f"# sample_rate: {row['srate']}\n")
+        f.write(f"# samples: {len(tr.t)}\n")
+        f.write(f"# duration_sec: {duration:.3f}\n")
+        f.write(f"# channels: {','.join(channels)}\n")
+        f.write(f"# stream: {row['name']}\n")
+        f.write(f"# lsl_uid: {uid}\n")
+        f.write("#\n")
+        writer.writerow(["timestamp"] + channels)
+        for ts, smp in zip(tr.t, tr.x):
+            writer.writerow([float(ts)] + ([float(v) for v in smp] if numeric else [str(v) for v in smp]))
+        out.append((f"{take.team}/{stem}.csv", f.getvalue()))
+        log.info("take %s: %d samples (%.1f s) of %s", take.label, len(tr.t), duration, row["name"])
+    return out
+
+
+def write_take(take: Take, data_dir: Path) -> list[str]:
+    """Write the take's CSVs under data_dir. Returns the paths written."""
+    paths: list[str] = []
+    for rel, text in format_take(take):
+        path = data_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stem, k = path.with_suffix(""), 2
+        while path.exists():  # two takes inside the same second (short takes, no rest)
+            path = Path(f"{stem}_{k}.csv")
+            k += 1
+        path.write_text(text, newline="")
+        log.info("saved %s", path)
         paths.append(str(path))
     return paths

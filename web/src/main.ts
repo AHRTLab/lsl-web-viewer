@@ -88,7 +88,11 @@ link.onState((s) => {
 link.onMessage((m: ServerMsg) => {
   switch (m.type) {
     case 'hello':
-      info.textContent = link.mode === 'demo' ? 'recordings download as CSV' : `v${m.version} · saving to ${m.data_dir}`;
+      info.textContent = link.mode === 'demo' ? 'demo · recordings download as CSV' : `v${m.version}`;
+      rec.setFolder(m.data_dir);
+      break;
+    case 'folder':
+      rec.setFolder(m.data_dir);
       break;
     case 'streams':
       streams = m.streams;
@@ -107,7 +111,7 @@ link.onMessage((m: ServerMsg) => {
       rec.addSaved(m.files, link.mode === 'demo');
       break;
     case 'error':
-      rec.error(m.message);
+      rec.error(m.message, !!m.no_dialog);
       break;
   }
 });

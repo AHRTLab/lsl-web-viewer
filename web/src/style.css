@@ -104,3 +104,11 @@ canvas.rms { width: 100%; height: 150px; display: block; }
 .marker-log { margin: 0; padding: 0; list-style: none; max-height: 160px; overflow: auto; font: 12px ui-monospace, Menlo, monospace; }
 .marker-log li { display: flex; gap: 10px; padding: 1px 0; border-top: 1px solid var(--line); }
 .marker-t { color: var(--muted); }
+
+/* save-folder row in the Record panel */
+.hidden { display: none !important; }
+.folder-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; min-width: 0; }
+.folder-path { flex: 1; min-width: 0; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-box { display: flex; gap: 6px; margin-bottom: 8px; }
+.folder-box input { flex: 1; min-width: 0; }

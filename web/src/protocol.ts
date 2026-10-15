@@ -36,7 +36,8 @@ export type ServerMsg =
   | { type: 'markers'; uid: string; t: number[]; values: string[] }
   | RecStatus
   | { type: 'saved'; files: string[]; take?: number; of?: number }
-  | { type: 'error'; message: string };
+  | { type: 'folder'; data_dir: string }                   // the save folder changed (any page's Change…)
+  | { type: 'error'; message: string; no_dialog?: boolean };
 
 export interface RecordStart {
   type: 'record_start';
@@ -52,7 +53,9 @@ export interface RecordStart {
 export type PageMsg =
   | { type: 'subscribe'; uids: string[] }
   | RecordStart
-  | { type: 'record_stop' };
+  | { type: 'record_stop' }
+  | { type: 'choose_folder' }               // the tool opens the computer's own folder dialog
+  | { type: 'set_folder'; path: string };   // typed path, when no dialog is available
 
 export type LinkState = 'connecting' | 'open' | 'closed' | 'demo';
 

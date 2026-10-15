@@ -137,3 +137,9 @@ async def page(server: ViewerServer) -> AsyncIterator[Page]:
             yield p
         finally:
             p.task.cancel()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_config(tmp_path, monkeypatch):
+    """Never touch the real ~/.config/lsl-web-viewer from tests."""
+    monkeypatch.setenv("LSL_WEB_VIEWER_CONFIG", str(tmp_path / "config.json"))

@@ -1,6 +1,6 @@
 // Live mode end to end: the real Python tool + real LSL outlets → the page it serves → a timed take on disk.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,8 +21,13 @@ function freePort(): Promise<number> {
   });
 }
 
+// The tool gets a throwaway config file (never the real ~/.config) and no native folder dialog, so
+// Change… falls back to the typed-path box that a headless browser can drive.
+const CONFIG = join(mkdtempSync(join(tmpdir(), 'lsl-web-viewer-cfg-')), 'config.json');
+
 function start(args: string[]): ChildProcess {
-  const p = spawn(PYTHON, args, { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+  const env = { ...process.env, LSL_WEB_VIEWER_CONFIG: CONFIG, LSL_WEB_VIEWER_NO_DIALOG: '1' };
+  const p = spawn(PYTHON, args, { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'], env });
   p.stdout?.on('data', () => {});
   p.stderr?.on('data', (d) => { if (process.env.DEBUG_E2E) process.stderr.write(d); });
   return p;
@@ -111,5 +116,37 @@ test.describe('served by lsl-web-viewer', () => {
     const samples = Number(/# samples: (\d+)/.exec(text)![1]);
     expect(samples).toBeGreaterThan(300 * 0.9);   // 1.5 s × 200 Hz
     expect(samples).toBeLessThan(300 * 1.1);
+  });
+
+  test('Change… without a native dialog: type a folder, and the next take is saved there', async ({ page, errors }) => {
+    void errors;
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await expect(page.locator('#rec-folder')).toHaveAttribute('title', realpathSync(dataDir));
+    await page.check(`input[aria-label="subscribe to ${prefix}EMG"]`);
+    await page.click('#rec-folder-btn');
+    await expect(page.locator('#rec-folder-input')).toBeVisible();          // NoDialog → path box
+    const target = join(dataDir, 'picked folder');
+    await page.fill('#rec-folder-input', target);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#rec-folder')).toHaveAttribute('title', realpathSync(dataDir) + '/picked folder');
+    await expect(page.locator('#rec-folder-input')).toBeHidden();
+    expect(JSON.parse(readFileSync(CONFIG, 'utf8')).data_dir).toBe(realpathSync(target));   // remembered
+
+    await page.fill('#rec-team', 'moved');
+    await page.fill('#rec-label', 'pinch');
+    await page.check('#rec-timed');
+    await page.fill('#rec-duration', '0.8');
+    await page.fill('#rec-countdown', '0');
+    await page.fill('#rec-repeat', '1');
+    await page.click('#rec-btn');
+    await expect(page.locator('#rec-status')).toHaveAttribute('data-state', 'recording', { timeout: 5_000 });
+    await page.waitForFunction(() => (window as any).__viewer.saved().length > 0, null, { timeout: 20_000 });
+    const files: string[] = await page.evaluate(() => (window as any).__viewer.saved());
+    const mine = files.filter((f) => f.includes('/moved/'));
+    expect(mine.length).toBeGreaterThan(0);
+    for (const f of mine) {
+      expect(f.startsWith(join(realpathSync(target), 'moved'))).toBe(true);
+      expect(existsSync(f)).toBe(true);
+    }
   });
 });

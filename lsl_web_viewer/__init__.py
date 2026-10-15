@@ -7,5 +7,5 @@ decimated data to the page over a WebSocket, and records full-rate CSV takes on 
 """
 from .loader import load_recording
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["__version__", "load_recording"]

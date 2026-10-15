@@ -15,6 +15,7 @@ import sys
 import webbrowser
 
 from . import __version__
+from . import folders
 from .server import ViewerServer
 
 log = logging.getLogger("lsl_web_viewer")
@@ -28,7 +29,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--host", default="localhost",
                     help="interface to bind (default localhost; 0.0.0.0 to allow other machines)")
     ap.add_argument("--open", action="store_true", help="open the page in the default browser")
-    ap.add_argument("--data-dir", default="./data", help="where recordings are written (default ./data)")
+    ap.add_argument("--data-dir", default=None,
+                    help="where recordings are saved (default: the folder last chosen on the page, else ./data); "
+                         "the page's Change… button picks another folder while running")
     ap.add_argument("--no-markers", action="store_true",
                     help="don't publish the LslWebViewerMarkers outlet (record_start / record_stop)")
     ap.add_argument("-v", "--verbose", action="store_true", help="debug logging")
@@ -49,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
 
     shown = "localhost" if args.host in ("0.0.0.0", "::", "") else args.host
     url = f"http://{shown}:{args.port}/"
-    server = ViewerServer(args.host, args.port, data_dir=args.data_dir, markers=not args.no_markers)
+    server = ViewerServer(args.host, args.port, data_dir=folders.initial_dir(args.data_dir), markers=not args.no_markers)
 
     def ready() -> None:
         log.info("lsl-web-viewer %s: open %s  (recordings → %s; Ctrl+C to quit)",

@@ -8,14 +8,20 @@ Protocol (JSON text frames; full description in README.md):
                   markers    {uid, t: [...], values: [...]}                as they arrive (string streams)
                   rec_status {state, label, team, take, of, remaining, elapsed, duration, uids}
                   saved      {files: [...], take, of}                      after each take is written
+                  folder     {data_dir}                                   the save folder changed
                   error      {message}
   page → server   subscribe    {uids: [...]}                              replaces this page's subscriptions
                   record_start {label, team, uids?, duration?, countdown?, repeat?, rest?}
                   record_stop  {}
+                  choose_folder {}                                         open a native folder dialog
+                  set_folder   {path}                                      typed path (no dialog available)
 
 Several pages may be open at once; each gets data only for the streams it subscribed to, and inlets
 exist for the union of all subscriptions (plus the streams of a running take). Recording is shared:
 every page sees the same rec_status.
+
+Only pages from this server's own origin (or another localhost page, e.g. `npm run dev`) may open the
+WebSocket: an unrelated website in another tab must not be able to record or move the save folder.
 """
 from __future__ import annotations
 
@@ -26,6 +32,7 @@ import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from websockets.asyncio.server import ServerConnection, broadcast, serve
 from websockets.exceptions import ConnectionClosed
@@ -33,7 +40,8 @@ from websockets.exceptions import ConnectionClosed
 from . import __version__
 from .discovery import Discovery, StreamRow
 from .inlets import StreamReader
-from .recorder import STOP_GRACE_SEC, Recorder
+from . import folders
+from .recorder import STOP_GRACE_SEC, Recorder, write_take
 from .site import SiteServer
 
 log = logging.getLogger("lsl_web_viewer")
@@ -80,6 +88,7 @@ class ViewerServer:
         self._take_task: asyncio.Task[None] | None = None
         self._stop_evt = asyncio.Event()
         self._plan: TakePlan | None = None
+        self._choosing = False
 
     # ------------------------------------------------------------------ sending
     def _send_all(self, msg: dict[str, Any]) -> None:
@@ -157,6 +166,47 @@ class ViewerServer:
                 broadcast([ws], json.dumps({"type": "error", "message": err}))
         elif t == "record_stop":
             self._stop_evt.set()
+        elif t == "choose_folder":
+            if not self._choosing:
+                asyncio.create_task(self._choose_folder(ws))
+        elif t == "set_folder":
+            self._set_folder(ws, str(msg.get("path") or ""))
+
+    # ------------------------------------------------------------------ save folder
+    def _recording(self) -> bool:
+        return self._take_task is not None and not self._take_task.done()
+
+    def _apply_folder(self, ws: ServerConnection, path: str) -> None:
+        try:
+            d = folders.validate_dir(path)
+        except (ValueError, OSError) as e:
+            broadcast([ws], json.dumps({"type": "error", "message": f"can't save to {path}: {e}"}))
+            return
+        self.recorder.data_dir = d
+        folders.remember_dir(d)
+        log.info("recordings → %s", d)
+        self._send_all({"type": "folder", "data_dir": str(d)})
+
+    def _set_folder(self, ws: ServerConnection, path: str) -> None:
+        if self._recording():
+            broadcast([ws], json.dumps({"type": "error", "message": "stop recording before changing the folder"}))
+            return
+        self._apply_folder(ws, path)
+
+    async def _choose_folder(self, ws: ServerConnection) -> None:
+        if self._recording():
+            broadcast([ws], json.dumps({"type": "error", "message": "stop recording before changing the folder"}))
+            return
+        self._choosing = True
+        try:
+            chosen = await asyncio.to_thread(folders.choose_folder, self.recorder.data_dir)
+        except folders.NoDialog as e:
+            broadcast([ws], json.dumps({"type": "error", "message": str(e), "no_dialog": True}))
+            return
+        finally:
+            self._choosing = False
+        if chosen is not None:  # None = cancelled
+            self._set_folder(ws, str(chosen))
 
     # ------------------------------------------------------------------ takes
     def start_takes(self, msg: dict[str, Any], default_uids: set[str] | None = None) -> str | None:
@@ -223,7 +273,9 @@ class ViewerServer:
         finally:
             if self.recorder.take is not None:  # cancelled mid-take (shutdown): still save what we have
                 self.recorder.end()
-                all_files += await asyncio.to_thread(self.recorder.finish)
+                take = self.recorder.finish()
+                if take is not None:
+                    all_files += await asyncio.to_thread(write_take, take, self.recorder.data_dir)
             self._plan = None
             self._set_status(state="done", label=plan.label or "data", team=plan.team or "unknown",
                              take=plan.repeat, of=plan.repeat, files=len(all_files))
@@ -233,15 +285,31 @@ class ViewerServer:
         self.recorder.end()
         self._set_status(**{**{k: v for k, v in self.status.items() if k != "type"}, "state": "saving"})
         await asyncio.sleep(STOP_GRACE_SEC)
+        take = self.recorder.finish()
+        if take is None:
+            return []
         try:
-            return await asyncio.to_thread(self.recorder.finish)
+            return await asyncio.to_thread(write_take, take, self.recorder.data_dir)
         except OSError as e:
             self._send_all({"type": "error", "message": f"could not save: {e}"})
             return []
 
     # ------------------------------------------------------------------ lifecycle
     def _process_request(self, connection: Any, request: Any) -> Any:
+        if request.headers.get("Upgrade", "").lower() == "websocket" and not self._origin_ok(request):
+            return connection.respond(403, "WebSocket connections are only accepted from this server's own page\n")
         return self.site.handle(request)
+
+    @staticmethod
+    def _origin_ok(request: Any) -> bool:
+        """Same-origin (Origin host:port == Host), any localhost page, or no Origin (scripts, not browsers)."""
+        origin = request.headers.get("Origin")
+        if not origin:
+            return True
+        o = urlsplit(origin)
+        if o.netloc and o.netloc == request.headers.get("Host", ""):
+            return True
+        return o.hostname in ("localhost", "127.0.0.1", "::1")
 
     def serve(self) -> Any:
         """The websockets server (an async context manager). Discovery starts with `start_discovery`."""

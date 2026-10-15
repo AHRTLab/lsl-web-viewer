@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lsl-web-viewer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Browser-based live viewer and labeled recorder for Lab Streaming Layer (LSL) streams"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }

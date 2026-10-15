@@ -25,7 +25,7 @@ A browser-based live viewer and labeled recorder for [Lab Streaming Layer](https
 Python 3.10 or newer:
 
 ```bash
-pip install "lsl-web-viewer @ git+https://github.com/AHRTLab/lsl-web-viewer@v0.1.0"
+pip install "lsl-web-viewer @ git+https://github.com/AHRTLab/lsl-web-viewer@v0.2.0"
 ```
 
 This installs `websockets`, `pylsl` (which ships the liblsl library on Windows, macOS and Linux x86_64)
@@ -34,7 +34,7 @@ and `numpy`. The page comes prebuilt inside the package, so Node is **not** need
 In a `requirements.txt` or `pyproject.toml` dependency list:
 
 ```
-lsl-web-viewer @ git+https://github.com/AHRTLab/lsl-web-viewer@v0.1.0
+lsl-web-viewer @ git+https://github.com/AHRTLab/lsl-web-viewer@v0.2.0
 ```
 
 ## Use
@@ -51,7 +51,7 @@ team id and a label, and press **Record** (or the `R` key when you're not typing
 | `--port` | `8770` | HTTP + WebSocket port. If it is busy, the tool says so; pick another one. |
 | `--host` | `localhost` | Interface to bind. `0.0.0.0` lets other machines open the page (there is no authentication, so only do this on a trusted network). |
 | `--open` | off | Open the page in the default browser. |
-| `--data-dir` | `./data` | Where recordings go. |
+| `--data-dir` | last folder chosen on the page, else `./data` | Where recordings go. You can also change it while running with **Change…** on the page. |
 | `--no-markers` | off | Don't publish the `LslWebViewerMarkers` outlet. |
 | `-v` | off | Debug logging. |
 
@@ -71,7 +71,15 @@ public demo site never connects to your machine; it only shows synthetic data.
 
 ## Recordings
 
-Each take writes one CSV per recorded stream:
+**Choosing the folder:** the Record panel shows *saving to …* with a **Change…** button. It opens your
+computer's own folder dialog (Finder on macOS, Explorer on Windows, zenity / kdialog / Tk on Linux),
+from the tool, so it works the same in every browser. The choice is remembered for next time
+(`~/.config/lsl-web-viewer/config.json`). On a machine with no dialog (headless Linux, or
+`LSL_WEB_VIEWER_NO_DIALOG=1`), Change… shows a box to type the full path instead. The folder can't be
+changed while a take is recording.
+
+The tool, not the browser, writes the files, at the stream's full rate. Each take writes one CSV per
+recorded stream:
 
 ```
 <data-dir>/<team>/<label>_<YYYYmmdd_HHMMSS>.csv              one stream
@@ -126,12 +134,13 @@ Server → page:
 | message | fields | when |
 |---|---|---|
 | `hello` | `version`, `data_dir` | on connect |
+| `folder` | `data_dir` | the save folder changed (any page's Change…, or `set_folder`) |
 | `streams` | `streams: [{uid, name, type, channels, srate, fmt, hostname, source_id, channel_labels}]` | every second |
 | `data` | `uid`, `t: [...]`, `x: [[ch1...], [ch2...], ...]` (channel-major; `x[c][i]` belongs to `t[i]`; `null` = non-finite) | ~30 Hz per subscribed stream, at most 600 points/s/channel |
 | `markers` | `uid`, `t: [...]`, `values: [...]` (multi-channel string samples joined with `", "`) | as string samples arrive |
 | `rec_status` | `state` (`idle`, `countdown`, `recording`, `saving`, `rest`, `done`), `label`, `team`, `take`, `of`, `remaining` (s, `null` for manual takes), `elapsed`, `duration`, `uids` | 5 Hz while a take sequence runs |
 | `saved` | `files: [...]` (absolute paths), `take`, `of` | after each take is written |
-| `error` | `message` | e.g. record without streams |
+| `error` | `message`, `no_dialog?` (`true` when Change… found no folder dialog) | e.g. record without streams |
 
 Page → server:
 
@@ -140,9 +149,13 @@ Page → server:
 | `subscribe` | `uids: [...]`: replaces this connection's subscriptions (`[]` = none) |
 | `record_start` | `label`, `team`, `uids?` (default: this connection's subscriptions), `duration?` (s; omit for a manual take), `countdown?` (s), `repeat?`, `rest?` (s) |
 | `record_stop` | stops the current take (it is saved) and cancels any remaining repeats |
+| `choose_folder` | open the native folder dialog on the computer running the tool |
+| `set_folder` | `path`: a full folder path (created if missing); rejected while recording |
 
 Several pages can be open at once; each gets data for its own subscriptions, and they share one
-recorder.
+recorder. Only pages from the tool's own origin (or another `localhost` page) may open the WebSocket, so
+a website open in another tab can't start recordings or move the save folder. Scripts (no `Origin`
+header) are allowed.
 
 ```python
 import asyncio, json, websockets
